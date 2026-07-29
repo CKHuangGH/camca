@@ -24,34 +24,3 @@ do
 done
 
 sleep 30
-
-helm repo add prometheus-community httpsprometheus-community.github.iohelm-charts
-helm repo update
-helm install prom prometheus-communitykube-prometheus-stack 
-  --version 87.6.0 
-  --namespace monitoring 
-  --create-namespace 
-  --set grafana.enabled=false 
-  --set alertmanager.enabled=false 
-  --set prometheus.service.type=NodePort 
-  --set prometheus.prometheusSpec.scrapeInterval=5s 
-  --set prometheus.prometheusSpec.enableAdminAPI=true 
-  --set prometheus.prometheusSpec.resources.requests.cpu=1000m 
-  --set prometheus.prometheusSpec.resources.requests.memory=1024Mi
-
-for i in $(cat cp_node_list_without_management)
-do
-    helm repo add prometheus-community httpsprometheus-community.github.iohelm-charts
-    helm repo update
-    helm install prom prometheus-communitykube-prometheus-stack 
-    --version 87.6.0 
-    --namespace monitoring 
-    --create-namespace 
-    --set grafana.enabled=false 
-    --set alertmanager.enabled=false 
-    --set prometheus.service.type=NodePort 
-    --set prometheus.prometheusSpec.scrapeInterval=5s 
-    --set prometheus.prometheusSpec.enableAdminAPI=true 
-    --set prometheus.prometheusSpec.resources.requests.cpu=1000m 
-    --set prometheus.prometheusSpec.resources.requests.memory=1024Mi
-done
