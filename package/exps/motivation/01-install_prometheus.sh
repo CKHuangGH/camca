@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-helm repo add prometheus-community \
-  https://prometheus-community.github.io/helm-charts \
-  --force-update
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
 
 helm repo update
 
 kubectl config use-context cluster0
 
-helm upgrade --install prom \
-  prometheus-community/kube-prometheus-stack \
+helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
   --version 87.6.0 \
   --namespace monitoring \
   --create-namespace \
