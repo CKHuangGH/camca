@@ -21,6 +21,8 @@ while read -r cluster interval; do
     --namespace monitoring \
     --create-namespace \
     --kubeconfig "$HOME/.kube/cluster${cluster}" \
+    --wait \
+    --timeout 15m \
     --set grafana.enabled=false \
     --set alertmanager.enabled=false \
     --set prometheus.service.type=NodePort \
@@ -37,9 +39,7 @@ done <<EOF
 5 120s
 EOF
 
-# ============================================================
-# 2. Start management values file
-# ============================================================
+# Start management values file
 
 cat > management-values.yaml <<'EOF'
 grafana:
@@ -64,20 +64,9 @@ prometheus:
     additionalScrapeConfigs:
 EOF
 
-# ============================================================
-# 3. Detect member IP and Prometheus NodePort automatically
-#
-# The kubeconfig is used to:
-#   1. confirm the API server
-#   2. query the member control-plane InternalIP
-#   3. query the Prometheus NodePort
-# ============================================================
+# Federation target for member clusters
 
 for cluster in 1 2 3 4 5; do
-  echo
-  echo "============================================================"
-  echo "Detecting federation target for cluster${cluster}"
-  echo "============================================================"
 
   kubeconfig="$HOME/.kube/cluster${cluster}"
 
@@ -96,27 +85,6 @@ for cluster in 1 2 3 4 5; do
       -l node-role.kubernetes.io/control-plane \
       -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}'
   )"
-
-  # Some clusters use the older master label.
-  if [[ -z "${member_ip}" ]]; then
-    member_ip="$(
-      kubectl \
-        --kubeconfig "${kubeconfig}" \
-        get nodes \
-        -l node-role.kubernetes.io/master \
-        -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}'
-    )"
-  fi
-
-  # Final fallback: use the first Kubernetes node.
-  if [[ -z "${member_ip}" ]]; then
-    member_ip="$(
-      kubectl \
-        --kubeconfig "${kubeconfig}" \
-        get nodes \
-        -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}'
-    )"
-  fi
 
   if [[ -z "${member_ip}" ]]; then
     echo "ERROR: cannot determine a node InternalIP for cluster${cluster}"
@@ -145,17 +113,6 @@ for cluster in 1 2 3 4 5; do
       -o jsonpath='{.spec.ports[?(@.name=="http-web")].nodePort}'
   )"
 
-  # Fallback if the Prometheus Service port has another name.
-  if [[ -z "${node_port}" ]]; then
-    node_port="$(
-      kubectl \
-        --kubeconfig "${kubeconfig}" \
-        --namespace monitoring \
-        get service "${service_name}" \
-        -o jsonpath='{.spec.ports[0].nodePort}'
-    )"
-  fi
-
   if [[ -z "${node_port}" ]]; then
     echo "ERROR: cannot determine Prometheus NodePort on cluster${cluster}"
     exit 1
@@ -167,9 +124,7 @@ for cluster in 1 2 3 4 5; do
   echo "Prometheus port:    ${node_port}"
   echo "Federation target:  ${member_ip}:${node_port}"
 
-  # ----------------------------------------------------------
   # Add federation job to management-values.yaml
-  # ----------------------------------------------------------
 
   cat >> management-values.yaml <<EOF
       - job_name: federation-cluster${cluster}
@@ -196,17 +151,6 @@ for cluster in 1 2 3 4 5; do
 
 EOF
 done
-
-# ============================================================
-# 4. Show generated management values
-# ============================================================
-
-echo
-echo "============================================================"
-echo "Generated management-values.yaml"
-echo "============================================================"
-
-cat management-values.yaml
 
 # ============================================================
 # 5. Install management Prometheus on cluster0
