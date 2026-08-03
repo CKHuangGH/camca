@@ -13,8 +13,8 @@ pids+=($!)
 python3 ./cluster/vm-member-cluster-2.py &
 pids+=($!)
 
-# python3 ./cluster/vm-member-cluster-3.py &
-# pids+=($!)
+python3 ./cluster/vm-member-cluster-3.py &
+pids+=($!)
 
 # echo "Waiting for all VM installation clusters..."
 

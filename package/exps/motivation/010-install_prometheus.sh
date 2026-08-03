@@ -21,8 +21,6 @@ while read -r cluster interval; do
     --namespace monitoring \
     --create-namespace \
     --kubeconfig "$HOME/.kube/cluster${cluster}" \
-    --wait \
-    --timeout 15m \
     --set grafana.enabled=false \
     --set alertmanager.enabled=false \
     --set prometheus.service.type=NodePort \
@@ -32,12 +30,15 @@ while read -r cluster interval; do
     --set prometheus.prometheusSpec.resources.requests.memory=1024Mi
 
 done <<EOF
-1 5s
+1 15s
 2 15s
-3 30s
-4 60s
-5 120s
+3 15s
+4 15s
+5 15s
+6 15s
 EOF
+
+sleep 60
 
 # Start management values file
 
@@ -66,7 +67,7 @@ EOF
 
 # Federation target for member clusters
 
-for cluster in 1 2 3 4 5; do
+for cluster in 1 2 3 4 5 6; do
 
   kubeconfig="$HOME/.kube/cluster${cluster}"
 
@@ -185,7 +186,7 @@ echo "============================================================"
 echo
 echo "Member Prometheus configuration:"
 
-for cluster in 1 2 3 4 5; do
+for cluster in 1 2 3 4 5 6; do
   echo
   echo "cluster${cluster}:"
 
