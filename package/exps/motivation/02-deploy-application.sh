@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
 KARMADA_KUBECONFIG=/etc/karmada/karmada-apiserver.config
 

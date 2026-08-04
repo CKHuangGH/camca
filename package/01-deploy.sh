@@ -1,5 +1,7 @@
 export DEBIAN_FRONTEND=noninteractive
 
+sudo apt-get update
+
 sudo apt-get install -y screen=4.9.1-3
 sudo apt-get install -y chrony=4.6.1-3+deb13u1
 
@@ -33,6 +35,7 @@ while IFS= read -r ip_address; do
 done < "all_node_list"
 
 while IFS= read -r ip_address; do
+  ssh -n -o StrictHostKeyChecking=no root@"$ip_address" sudo apt-get update
   ssh -n -o StrictHostKeyChecking=no root@"$ip_address" mkdir /var/log/chrony
   ssh -n -o StrictHostKeyChecking=no root@"$ip_address" sudo apt-get install -y chrony=4.6.1-3+deb13u1
   ssh -n -o StrictHostKeyChecking=no root@"$ip_address" "nohup bash /root/chrony.sh 2>&1 &"

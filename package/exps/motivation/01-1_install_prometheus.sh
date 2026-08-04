@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
 
@@ -30,12 +29,12 @@ while read -r cluster interval; do
     --set prometheus.prometheusSpec.resources.requests.memory=1024Mi
 
 done <<EOF
-1 15s
+1 5s
 2 15s
-3 15s
-4 15s
-5 15s
-6 15s
+3 30s
+4 60s
+5 120s
+6 300s
 EOF
 
 sleep 60
@@ -71,14 +70,6 @@ for cluster in 1 2 3 4 5 6; do
 
   kubeconfig="$HOME/.kube/cluster${cluster}"
 
-  api_server="$(
-    kubectl \
-      --kubeconfig "${kubeconfig}" \
-      config view \
-      --minify \
-      -o jsonpath='{.clusters[0].cluster.server}'
-  )"
-
   member_ip="$(
     kubectl \
       --kubeconfig "${kubeconfig}" \
@@ -93,13 +84,13 @@ for cluster in 1 2 3 4 5 6; do
   fi
 
   service_name="$(
-    kubectl \
-      --kubeconfig "${kubeconfig}" \
-      --namespace monitoring \
-      get service \
-      -l app.kubernetes.io/name=prometheus \
-      -o jsonpath='{.items[0].metadata.name}'
-  )"
+  kubectl \
+    --kubeconfig "${kubeconfig}" \
+    --namespace monitoring \
+    get service \
+    -l app=kube-prometheus-stack-prometheus \
+    -o jsonpath='{.items[0].metadata.name}'
+)"
 
   if [[ -z "${service_name}" ]]; then
     echo "ERROR: cannot find Prometheus Service on cluster${cluster}"
@@ -119,7 +110,6 @@ for cluster in 1 2 3 4 5 6; do
     exit 1
   fi
 
-  echo "API server:         ${api_server}"
   echo "Node InternalIP:    ${member_ip}"
   echo "Prometheus Service: ${service_name}"
   echo "Prometheus port:    ${node_port}"
@@ -153,9 +143,7 @@ for cluster in 1 2 3 4 5 6; do
 EOF
 done
 
-# ============================================================
-# 5. Install management Prometheus on cluster0
-# ============================================================
+# Install management Prometheus on cluster0
 
 echo
 echo "============================================================"
@@ -170,13 +158,101 @@ helm upgrade --install prometheus \
   --namespace monitoring \
   --create-namespace \
   --kube-context cluster0 \
-  --values management-values.yaml \
-  --wait \
-  --timeout 15m
+  --values management-values.yaml
+
+# Display final configuration
+
+sleep 60
 
 # ============================================================
-# 6. Display final configuration
+# Check installation and display final configuration
 # ============================================================
+
+check_monitoring_pods() {
+  cluster_name="$1"
+  shift
+
+  echo
+  echo "============================================================"
+  echo "Checking monitoring Pods on ${cluster_name}"
+  echo "============================================================"
+
+  for attempt in $(seq 1 120); do
+    pods="$(
+      kubectl "$@" \
+        --namespace monitoring \
+        get pods \
+        --no-headers \
+        2>/dev/null || true
+    )"
+
+    if [[ -n "${pods}" ]]; then
+      unhealthy_pods="$(
+        printf '%s\n' "${pods}" |
+        awk '
+          {
+            split($2, ready, "/")
+
+            if ($3 != "Running" && $3 != "Completed") {
+              print
+            } else if ($3 == "Running" && ready[1] != ready[2]) {
+              print
+            }
+          }
+        '
+      )"
+
+      if [[ -z "${unhealthy_pods}" ]]; then
+        echo "All monitoring Pods on ${cluster_name} are ready."
+
+        kubectl "$@" \
+          --namespace monitoring \
+          get pods \
+          -o wide
+
+        return 0
+      fi
+    fi
+
+    echo "Waiting for monitoring Pods on ${cluster_name}... (${attempt}/120)"
+    sleep 5
+  done
+
+  echo
+  echo "ERROR: monitoring Pods on ${cluster_name} did not become ready."
+
+  kubectl "$@" \
+    --namespace monitoring \
+    get pods \
+    -o wide || true
+
+  echo
+  echo "Recent events on ${cluster_name}:"
+
+  kubectl "$@" \
+    --namespace monitoring \
+    get events \
+    --sort-by='.lastTimestamp' |
+  tail -n 30 || true
+
+  exit 1
+}
+
+# Check member clusters
+
+for cluster in 1 2 3 4 5 6; do
+  check_monitoring_pods \
+    "cluster${cluster}" \
+    --kubeconfig "$HOME/.kube/cluster${cluster}"
+done
+
+# Check management cluster
+
+check_monitoring_pods \
+  "cluster0" \
+  --context cluster0
+
+# Display final configuration
 
 echo
 echo "============================================================"
@@ -198,7 +274,7 @@ for cluster in 1 2 3 4 5 6; do
 done
 
 echo
-echo "Management Prometheus:"
+echo "Management Prometheus configuration:"
 
 kubectl \
   --context cluster0 \
@@ -207,14 +283,14 @@ kubectl \
   -o custom-columns=NAME:.metadata.name,SCRAPE:.spec.scrapeInterval
 
 echo
-echo "Management values file:"
-echo "$(pwd)/management-values.yaml"
+echo "Management Prometheus Service:"
+
+kubectl \
+  --context cluster0 \
+  --namespace monitoring \
+  get service \
+  -l app=kube-prometheus-stack-prometheus
 
 echo
-echo "To inspect federation targets, run:"
-echo
-echo "kubectl --context cluster0 -n monitoring port-forward \\"
-echo "  service/prometheus-kube-prometheus-stack-prometheus 9090:9090"
-echo
-echo "Then open:"
-echo "http://127.0.0.1:9090/targets"
+echo "Management values file:"
+echo "$(pwd)/management-values.yaml"
